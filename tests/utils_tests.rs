@@ -1,15 +1,14 @@
 // tests/utils_tests.rs
-
-use tabular_to_parquet::utils::{est_null_texte, parse_bool, parse_date_ymd, parse_timestamp_ms};
+use csv_to_parquet::utils::{is_null_text, parse_bool, parse_date_ymd, parse_timestamp_ms};
 
 #[test]
-fn test_est_null_texte() {
-    assert!(est_null_texte(""));
-    assert!(est_null_texte(" "));
-    assert!(est_null_texte("NULL"));
-    assert!(est_null_texte("NaN"));
-    assert!(!est_null_texte("0"));
-    assert!(!est_null_texte("false"));
+fn test_is_null_text() {
+    assert!(is_null_text(""));
+    assert!(is_null_text(" "));
+    assert!(is_null_text("NULL"));
+    assert!(is_null_text("NaN"));
+    assert!(!is_null_text("0"));
+    assert!(!is_null_text("false"));
 }
 
 #[test]
@@ -36,9 +35,7 @@ fn test_parse_date_ymd() {
 fn test_parse_timestamp_ms() {
     let t1 = parse_timestamp_ms("1970-01-01 00:00:01").unwrap();
     assert_eq!(t1, 1_000);
-
     let t2 = parse_timestamp_ms("1000000000").unwrap();
     assert_eq!(t2, 1_000_000_000_000);
-
     assert!(parse_timestamp_ms("invalid").is_none());
 }

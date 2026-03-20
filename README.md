@@ -1,173 +1,190 @@
-# 🦀 Tabular to parquet
+# 🦀 CSV to parquet
 
-## 📘 Description
+CSV/TSV → Parquet converter written in Rust. Automatic schema inference, ZSTD compression, parallel processing.
 
-`tabular_to_parquet` est un outil en ligne de commande écrit en **Rust** permettant de convertir des fichiers
-tabulaires (CSV, TSV ou formats similaires) en **Apache Parquet**, avec une **détection automatique du délimiteur** et
-une **inférence du schéma Arrow**.
+![Project demo](docs/csv-to-parquet.demo.gif)
 
-Conçu pour traiter des fichiers volumineux de manière **déterministe**, il produit des fichiers
-Parquet directement exploitables par les moteurs analytiques modernes tels que DuckDB, Polars, Spark, Pandas ou PyArrow.
+## How it works
 
-Il infère le schéma sans nécessiter de configuration manuelle.
+The program reads a csv file (CSV, TSV, or any delimiter among `,` `;` `\t` `|`), infers each column's type from a 10,000-row sample, then writes a compressed Parquet file.
 
-![Démo du projet](docs/tabular-to-parquet.demo.gif)
+### Inferred types
 
-## ⚙️ Fonctionnalités
+| Parquet type    | Detection conditions                                                 |
+| --------------- | -------------------------------------------------------------------- |
+| `Boolean`       | `true`/`false`, `yes`/`no`, `y`/`n`, `on`/`off`, `t`/`f`, `0`/`1`    |
+| `Int64`         | Signed integers within the i64 range                                 |
+| `UInt64`        | Positive integers exceeding i64 but within the u64 range             |
+| `Float64`       | Numbers containing `.`, `e` or `E`                                   |
+| `Date32`        | Formats `YYYY-MM-DD`, `DD/MM/YYYY`, `MM/DD/YYYY`                     |
+| `Timestamp(ms)` | RFC3339, `YYYY-MM-DD HH:MM:SS`, variants with fractions and timezone |
+| `LargeUtf8`     | Anything that doesn't match any of the above                         |
 
-- **Détection automatique du délimiteur** : `,`, `;`, `\t`, `|`, `:`, espace
-- **Inférence automatique des types de colonnes** à partir d’un échantillon (max. 10 000 lignes)
-- **Support complet des types Arrow** :
-    - Booléens
-    - Entiers signés et non signés
-    - Flottants
-    - Dates (`Date32`)
-    - Timestamps (`Second`, `Millisecond`, `Microsecond`, `Nanosecond`)
-    - Heures (`Time64(Microsecond)`)
-    - Texte (`Utf8`, `LargeUtf8`)
-    - Binaire (`Binary`, `LargeBinary`)
-- **Conversion robuste** :
-    - Valeurs invalides converties en `null`
-    - Adaptation automatique de la nullabilité si nécessaire
-- **Traitement par blocs** (50 000 lignes)
-- **Écriture Parquet compressée** avec **ZSTD**
-- **Support de l’entrée standard (`stdin`)** via `-`
+Values `null`, `NULL`, `None`, `NaN`, `N/A`, `na`, `nd`, `nr`, `-`, `--` and empty strings are treated as nulls regardless of the column type.
 
-## 🧩 Dépendances principales
+### Automatic detection
 
-| Crate        | Rôle                                                        |
-|--------------|-------------------------------------------------------------|
-| `anyhow`     | Gestion unifiée et contextuelle des erreurs                 |
-| `csv`        | Lecture et parsing des fichiers tabulaires (CSV, TSV, etc.) |
-| `arrow`      | Structures de données colonne et schémas Apache Arrow       |
-| `parquet`    | Écriture du format Apache Parquet                           |
-| `chrono`     | Parsing et manipulation des dates, heures et timestamps     |
-| `rayon`      | Parallélisation CPU (inférence, traitements auxiliaires)    |
-| `clap`       | Parsing des arguments de ligne de commande                  |
-| `log`        | API de journalisation structurée                            |
-| `indicatif`  | Barres de progression et indicateurs de traitement          |
-| `owo-colors` | Colorisation de la sortie terminal                          |
+The delimiter is detected by counting occurrences across the first 20 lines. The header is detected through heuristics (comparing the first line's profile against the data). If no header is found, names `col_0`, `col_1`, ... are generated.
 
-> Les versions de `arrow` et `parquet` doivent être identiques.
+### Pipeline
 
-## 🏗️ Installation
+```
+CSV file
+    │
+    ├─ Delimiter detection
+    ├─ Header detection
+    ├─ Schema inference (10,000-row sample)
+    │
+    ├─ Reading in 100,000-line blocks
+    ├─ Parallel conversion (rayon + crossbeam)
+    ├─ Ordered Parquet writing (ZSTD level 5)
+    │
+    └─ Validation report (row consistency, null/error rates per column)
+```
 
-### Prérequis
-
-- Rust stable (édition 2021)
-- Cargo
-
-### Compilation
+## Installation
 
 ```bash
-cargo build --release  # --target x86_64-unknown-linux-musl (pour compatibilité)
+cargo build --release
 ```
 
-Le binaire généré se trouve dans :
+The binary is located at `target/release/csv_to_parquet`.
 
-```text
-./target/release/tabular_to_parquet
-```
+## Usage
 
-## Utilisation
-
-### Syntaxe
+### Simple conversion
 
 ```bash
-tabular_to_parquet <fichier | ->
+csv_to_parquet file.csv
 ```
 
-### Option disponible
+Produces `file.parquet` in the same directory.
+
+### TSV or other delimiters
 
 ```bash
-tabular_to_parquet --inferer-schema-complet fichier.(csv|tsv)
+csv_to_parquet file.tsv
 ```
 
-* `--inferer-schema-complet`
-  Analyse l’ensemble du fichier pour l’inférence du schéma au lieu d’un échantillon.
-  Cette option augmente le temps d’analyse.
+The delimiter is detected automatically.
 
-### Exemples
-
-Conversion d’un fichier CSV/TSV :
+### From stdin
 
 ```bash
-tabular_to_parquet donnees.csv
+cat file.csv | csv_to_parquet -
 ```
 
-Produit le fichier `donnees.parquet` dans le même répertoire.
+Produces `stdin.parquet` in the current directory.
 
-Conversion d’un fichier TSV dans un sous-répertoire :
+### Options
+
+```
+--inferer-schema-complet   Analyze the entire file for inference
+                           (slower but more accurate for files where
+                           types vary beyond the first 10,000 rows)
+
+--force-utf8               Force all columns to LargeUtf8
+                           (disables all inference, preserves raw data)
+
+--view-schema              Display the logical and physical schema of a Parquet file
+
+--man                      Generate the man page in roff format
+```
+
+### Examples
 
 ```bash
-tabular_to_parquet ./data/mesures.tsv
+# Conversion with extended inference
+csv_to_parquet --inferer-schema-complet large_file.csv
+
+# Inspect the result
+csv_to_parquet --view-schema large_file.parquet
+
+# Everything as text (no possible semantic loss)
+csv_to_parquet --force-utf8 messy_data.csv
+
+# Man page
+csv_to_parquet --man > csv_to_parquet.1
+man ./csv_to_parquet.1
 ```
 
-Produit le fichier `./data/mesures.parquet`.
+## Output report
 
-Lecture depuis l’entrée standard :
+Each conversion produces a report on stderr:
+
+```
+========== VALIDATION REPORT ==========
+
+CSV rows           1000000
+Parquet rows       1000000
+Parsing errors           0
+Read errors              0
+Total errors             0
+[OK] Consistency validated
+
+========== COLUMNS ==========
+
+name                     type           null %      err %    valid %     conf
+--------------------------------------------------------------------------------------
+id                       Int64           0.00        0.00     100.00   100.00
+price                    Float64         0.50        0.00      99.50    99.50
+sale_date                Date32          1.20        0.00      98.80    98.80
+description              LargeUtf8       0.00        0.00     100.00   100.00
+```
+
+The `err %` column indicates the percentage of non-null values that could not be converted to the inferred type. These values are replaced by nulls in the Parquet output.
+
+## Tests
 
 ```bash
-cat donnees.csv | tabular_to_parquet -
+cargo test
 ```
 
-Produit le fichier... `stdin.parquet`
+The test suite covers schema inference, type conversions, null and error handling, strict block write ordering, the full pipeline, and delimiter detection.
 
-## Inférence du schéma
+A Python script allows testing against generated data:
 
-- Analyse d’un échantillon des **10 000 premières lignes**
-- Reconnaissance des booléens, entiers, flottants
-- Détection des dates et timestamps (formats multiples, UNIX)
-- Bascule vers texte en cas d’ambiguïté
-
-Toutes les colonnes sont traitées comme **nullables**.
-
-## 💾 Performances
-
-Débit typique : ~10⁴ lignes/s (≈ 10–50 µs/ligne).
-
-Le traitement est effectué par blocs de **50 000 lignes**, avec une écriture séquentielle dans le fichier Parquet.
-
-Les performances dépendent fortement :
-
-- du disque (SSD vs HDD)
-- de la complexité du schéma
-- du taux d’erreurs de parsing
-
-Le programme est conçu pour être **stable et prévisible**.
-
-## 🧪 Vérification du fichier Parquet
-
-### DuckDB
-
-```sql
-SELECT *
-  FROM read_parquet('jeu_test_types_complet.parquet') LIMIT 5;
-DESCRIBE SELECT * FROM 'jeu_test_types_complet.parquet';
+```bash
+python3 test_csv_to_parquet.py
 ```
 
-### Python (PyArrow / Pandas)
+Prerequisite: `pyarrow` (`pip install pyarrow`).
 
-```python
-import pyarrow.parquet as pq
-table = pq.read_table("jeu_test_types_complet.parquet")
-print(table.schema)
-print(table.to_pandas().head())
+## Demo
+
+```bash
+chmod +x demo.sh
+asciinema rec demo.cast \
+    --overwrite \
+    --title "csv to parquet" \
+    --cols 120 \
+    --rows 34 \
+    --command "bash demo.sh"
 ```
 
-### Polars
+## Known limitations
 
-```python
-import polars as pl
-df = pl.read_parquet("jeu_test_types_complet.parquet")
-print(df.head())
-```
+- Inference is strict: a single non-conforming value invalidates the type for the entire column. A column with 99.9% integers and one text value will be inferred as `LargeUtf8`.
+- Ambiguous date formats (`01/02/2024`: January 2nd or February 1st?) are tested in order `DD/MM/YYYY` then `MM/DD/YYYY`. The first successful parse wins. If both are valid, `DD/MM/YYYY` is retained.
+- Header detection is heuristic-based. A false positive is possible when the first data row structurally resembles a header (short, unique, alphabetic values).
+- No support for compressed input files (gzip, bzip2). Decompress first or use stdin: `zcat file.csv.gz | csv_to_parquet -`.
 
-## ⚠️ Limitations
+## Dependencies
 
-- Pas de paramètres CLI avancés (`--output`, `--delimiter`, etc.)
-- Pas de streaming pur
-- Encodage supposé UTF-8
-- Formats datetime exotiques non reconnus → texte
+| Crate                    | Role                             |
+| ------------------------ | -------------------------------- |
+| `arrow` / `parquet`      | Arrow schema, Parquet writing    |
+| `csv`                    | CSV reading                      |
+| `chrono`                 | Date and timestamp parsing       |
+| `rayon`                  | Block-level parallelism          |
+| `crossbeam`              | Bounded channels between threads |
+| `clap`                   | Command-line interface           |
+| `indicatif`              | Progress bar                     |
+| `anyhow`                 | Error handling                   |
+| `lexical-core`           | Fast numeric parsing             |
+| `owo-colors` / `colored` | Terminal colors                  |
+| `tempfile`               | Temporary files (stdin)          |
 
+## License
 
+Unspecified.
