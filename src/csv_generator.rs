@@ -162,7 +162,7 @@ fn generate_float(index: usize) -> String {
     format!("{:.6}", index as f64 * 0.1)
 }
 fn generate_bool(index: usize) -> String {
-    if index % 2 == 0 {
+    if index.is_multiple_of(2) {
         "true".into()
     } else {
         "false".into()

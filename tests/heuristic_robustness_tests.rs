@@ -1,7 +1,7 @@
 // tests/heuristic_robustness_tests.rs
 use arrow::datatypes::DataType;
-use std::io::Write;
 use csv_to_parquet::schema::infer_schema;
+use std::io::Write;
 use tempfile::NamedTempFile;
 
 fn csv_temp(content: &str) -> NamedTempFile {

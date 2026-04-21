@@ -1,8 +1,8 @@
 // tests/integration_pipeline_tests.rs
+use csv_to_parquet::conversion::convert_csv_to_parquet;
 use parquet::file::reader::{FileReader, SerializedFileReader};
 use std::fs::File;
 use std::io::Write;
-use csv_to_parquet::conversion::convert_csv_to_parquet;
 use tempfile::NamedTempFile;
 
 #[test]

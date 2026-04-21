@@ -1,7 +1,7 @@
 // tests/analysis_tests.rs
 use arrow::datatypes::{DataType, Field, Schema};
-use std::sync::Arc;
 use csv_to_parquet::analysis::{analyze_block, ErrorCounters};
+use std::sync::Arc;
 
 #[test]
 fn test_analyze_block_simple() {
@@ -21,9 +21,7 @@ fn test_analyze_block_simple() {
     for metric in &result.metrics {
         assert_eq!(
             metric.total_values,
-            metric.total_valid_values
-                + metric.total_null_text
-                + metric.total_conversion_errors
+            metric.total_valid_values + metric.total_null_text + metric.total_conversion_errors
         );
     }
 }

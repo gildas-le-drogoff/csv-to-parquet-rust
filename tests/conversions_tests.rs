@@ -1,7 +1,7 @@
 // tests/conversions_tests.rs
 use arrow::datatypes::{DataType, Field, Schema};
-use std::sync::Arc;
 use csv_to_parquet::analysis::{analyze_block, ErrorCounters};
+use std::sync::Arc;
 
 #[test]
 fn test_i64_overflow_via_analysis() {
